@@ -1,51 +1,43 @@
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework import viewsets
 from notes.models import Note
 from notes.serializers import NoteSerializer
-from django.http import Http404
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import permissions
+from rest_framework import renderers
 
-
-class NoteList(APIView):
+class IsOwnerOrReadOnly(permissions.BasePermission):
     """
-    列出所有的note，或者创建一个新的note。
+    自定义权限，只允许对象的所有者编辑它。
     """
-    def get(self, request, format=None):
-        notes = Note.objects.all()
-        serializer = NoteSerializer(notes, many=True)
-        return Response(serializer.data)
 
-    def post(self, request, format=None):
-        serializer = NoteSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    def has_object_permission(self, request, view, obj):
+        # 任何请求都允许有读权限，
+        # 所以我们总是允许GET, HEAD或OPTIONS请求。
+        if request.method in permissions.SAFE_METHODS:
+            return True
 
-class NoteDetail(APIView):
+        # 写权限只允许给代码段的所有者。
+        return obj.owner == request.user
+
+
+class NoteViewSet(viewsets.ModelViewSet):
     """
-    检索、更新或删除代码片段实例。
+    这个viewset会自动提供' list '， ' create '， ' retrieve '，
+
+    “更新”和“销毁”动作。
+
+    此外，我们还提供一个额外的“highlight”行动。
     """
-    def get_object(self, pk):
-        try:
-            return Note.objects.get(pk=pk)
-        except Note.DoesNotExist:
-            raise Http404
+    queryset = Note.objects.all()
+    serializer_class = NoteSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly,
+                          IsOwnerOrReadOnly]
 
-    def get(self, request, pk, format=None):
-        note = self.get_object(pk)
-        serializer = NoteSerializer(note)
-        return Response(serializer.data)
+    @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
+    def highlight(self, request, *args, **kwargs):
+        snippet = self.get_object()
+        return Response(snippet.highlighted)
 
-    def put(self, request, pk, format=None):
-        note = self.get_object(pk)
-        serializer = NoteSerializer(note, data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    def delete(self, request, pk, format=None):
-        note = self.get_object(pk)
-        note.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)

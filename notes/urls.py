@@ -1,10 +1,13 @@
-from django.urls import path
-from rest_framework.urlpatterns import format_suffix_patterns
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 from notes import views
 
-urlpatterns = [
-    path('notes/', views.NoteList.as_view()),
-    path('notes/<int:pk>/', views.NoteDetail.as_view()),
-]
 
-urlpatterns = format_suffix_patterns(urlpatterns)
+# 创建一个路由器并注册我们的视图集。
+router = DefaultRouter()
+router.register(r'notes', views.NoteViewSet)
+
+# API url现在由路由器自动确定。
+urlpatterns = [
+    path('', include(router.urls)),
+]
